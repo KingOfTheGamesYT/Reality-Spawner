@@ -1,0 +1,42 @@
+modLoader="javafml"
+
+loaderVersion="[36,)"
+
+license="All rights reserved"
+
+[[mods]]
+itemIcon="minecraft:stick"
+
+configBackground="minecraft:textures/block/spawner.png"
+
+modId="reality_spawner"
+
+version="1.0.0"
+
+displayName="Reality Spawner"
+
+displayURL="https://www.curseforge.com/minecraft/mc-mods/reality-spawner"
+
+logoFile="reality_spawner_logo.png"
+
+credits="All credit goes to DevMaster1015 aka RedRoseWarrior1"
+
+authors=["RedRoseWarrior1 aka DevMaster1015"]
+
+description='''Allows you to bring other realities to this one'''
+
+# Base Forge
+[[dependencies.reality_spawner]]
+    modId="forge"
+    mandatory=true
+    versionRange="[36,)"
+    ordering="NONE"
+    side="BOTH"
+
+# Base Minecraft
+[[dependencies.reality_spawner]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.16.5,1.17]"
+    ordering="NONE"
+    side="BOTH"

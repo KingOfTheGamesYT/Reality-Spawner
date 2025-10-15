@@ -1,0 +1,113 @@
+// ---- BEGIN: PLUGIN SETUP ----
+buildscript {
+    repositories {
+        maven { url = 'https://files.minecraftforge.net/maven' }
+        jcenter()
+        mavenCentral()
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '3.+', changing: true
+    }
+}
+
+apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'eclipse'
+apply plugin: 'maven-publish'
+// ---- END: PLUGIN SETUP ----
+
+
+// ---- MOD METADATA ----
+version = '1.0.0'
+group = 'com.devmaster.reality_spawner'
+archivesBaseName = 'reality_spawner'
+
+// ---- JAVA SETUP ----
+sourceCompatibility = targetCompatibility = '1.8'
+
+println('Java: ' + System.getProperty('java.version') + ' JVM: ' + System.getProperty('java.vm.version') + '(' + System.getProperty('java.vendor') + ') Arch: ' + System.getProperty('os.arch'))
+
+// ---- MINECRAFT CONFIG ----
+minecraft {
+    mappings channel: 'snapshot', version: '20210309-1.16.5'
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'SCAN,REGISTRIES,REGISTRYDUMP'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                reality_spawner {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'SCAN,REGISTRIES,REGISTRYDUMP'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                reality_spawner {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        data {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'SCAN,REGISTRIES,REGISTRYDUMP'
+            property 'forge.logging.console.level', 'debug'
+            args '--mod', 'reality_spawner', '--all', '--output', file('src/generated/resources/')
+            mods {
+                reality_spawner {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+// ---- DEPENDENCIES ----
+repositories {
+    mavenCentral()
+    maven { url = 'https://www.cursemaven.com' } // For CurseForge mods
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.16.5-36.2.39'
+
+    //project name, project id, file id
+    implementation fg.deobf("curse.maven:jei-238222:3189632")
+}
+
+// ---- JAR MANIFEST ----
+jar {
+    manifest {
+        attributes([
+                "Specification-Title": "reality_spawner",
+                "Specification-Vendor": "realityspawnersareus",
+                "Specification-Version": "1", //We are version 1 of ourselves
+                "Implementation-Title": project.name,
+                "Implementation-Version": version,
+                "Implementation-Vendor": "realityspawnersareus",
+                "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+}
+
+// ---- REMAP JAR ----
+jar.finalizedBy('reobfJar')
+
+// ---- PUBLISHING ----
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifact jar
+        }
+    }
+    repositories {
+        maven {
+            url "file:///${project.projectDir}/mcmodsrepo"
+        }
+    }
+}
