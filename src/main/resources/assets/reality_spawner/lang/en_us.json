@@ -1,0 +1,10 @@
+{
+
+  "_comment": "Data Chips",
+  "item.reality_spawner.random_chip": "Random Data Chip",
+
+  "_comment": "Blocks",
+  "block.reality_spawner.reality_spawner": "Reality Spawner",
+  "block.reality_spawner.containment_block": "Containment Block",
+  "block.reality_spawner.containment_glass": "Containment Glass"
+}
