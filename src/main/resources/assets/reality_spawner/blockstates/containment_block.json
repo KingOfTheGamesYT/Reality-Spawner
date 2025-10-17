@@ -1,0 +1,5 @@
+{
+    "variants": {
+        "": { "model": "reality_spawner:block/containment_block" }
+    }
+}

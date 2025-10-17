@@ -1,0 +1,6 @@
+{
+    "parent": "block/cube_all",
+    "textures": {
+        "all": "reality_spawner:blocks/reality_spawner_bottom"
+    }
+}
