@@ -4,6 +4,8 @@ import com.devmaster.reality_spawner.client.render.PreviewRenderer;
 import com.devmaster.reality_spawner.items.DataChip;
 import com.devmaster.reality_spawner.items.RandomDataChip;
 
+import com.devmaster.reality_spawner.misc.ContainmentProcessor;
+import com.devmaster.reality_spawner.misc.DelayedTaskScheduler;
 import com.devmaster.reality_spawner.misc.RegistryHandler;
 import net.minecraft.block.*;
 import net.minecraft.block.material.Material;
@@ -13,14 +15,17 @@ import net.minecraft.item.BlockItemUseContext;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.SwordItem;
 import net.minecraft.loot.LootContext;
+import net.minecraft.particles.ParticleTypes;
 import net.minecraft.state.BooleanProperty;
 import net.minecraft.state.DirectionProperty;
 import net.minecraft.state.StateContainer;
 import net.minecraft.state.properties.BlockStateProperties;
 import net.minecraft.util.*;
+import net.minecraft.util.concurrent.TickDelayedTask;
 import net.minecraft.util.math.*;
 import net.minecraft.util.text.StringTextComponent;
 import net.minecraft.world.World;
+import net.minecraft.world.gen.feature.template.BlockIgnoreStructureProcessor;
 import net.minecraft.world.server.ServerWorld;
 import net.minecraft.world.gen.feature.template.PlacementSettings;
 import net.minecraft.world.gen.feature.template.Template;
@@ -56,7 +61,7 @@ public class RealitySpawner extends Block {
 
     @Override
     public BlockState getStateForPlacement(BlockItemUseContext context) {
-        return this.getDefaultState().with(FACING, context.getPlacementHorizontalFacing().getOpposite());
+        return this.getDefaultState().with(FACING, context.getPlacementHorizontalFacing());
     }
 
     @Override
@@ -101,7 +106,7 @@ public class RealitySpawner extends Block {
 
             ServerWorld serverWorld = (ServerWorld) world;
             TemplateManager manager = serverWorld.getStructureTemplateManager();
-            ResourceLocation rl = new ResourceLocation("realityspawner", structureName);
+            ResourceLocation rl = new ResourceLocation("reality_spawner", structureName);
             Template template = manager.getTemplate(rl);
 
             if (template == null) {
@@ -109,13 +114,34 @@ public class RealitySpawner extends Block {
                 return ActionResultType.SUCCESS;
             }
 
-            BlockPos start = getBubbleInteriorOrigin(pos, facing);
-            template.func_237144_a_( // placeInWorld
-                    serverWorld,
-                    start,
-                    new PlacementSettings(),
-                    serverWorld.rand
-            );
+            BlockPos interiorStart = getBubbleInteriorOrigin(pos, facing).add(1, 0, 1);
+            PlacementSettings settings = new PlacementSettings()
+                    .addProcessor(new ContainmentProcessor(interiorStart, interiorStart.add(13, 14, 13)))
+                    .addProcessor(BlockIgnoreStructureProcessor.AIR);
+
+            spawnBlackHole(serverWorld, interiorStart);
+
+            int currentTick = serverWorld.getServer().getTickCounter();
+
+            // Phase 1–2: Gateway build-up (9 seconds)
+            for (int i = 0; i < 300; i++) {
+                int tickDelay = i;
+                DelayedTaskScheduler.schedule(serverWorld.getServer(), tickDelay, () -> {
+                    spawnBlackHole(serverWorld, getBubbleInteriorOrigin(pos, facing));
+                    damageEntitiesInBubble(serverWorld, pos, facing);
+                });
+            }
+            // Phase 3: Collapse
+            DelayedTaskScheduler.schedule(serverWorld.getServer(), 320, () -> {
+                collapseGateway(serverWorld, getBubbleInteriorOrigin(pos, facing));
+            });
+
+            // Finally spawn the structure after total ~13 seconds (460 ticks)
+            DelayedTaskScheduler.schedule(serverWorld.getServer(), 460, () -> {
+                template.func_237144_a_(serverWorld, interiorStart, settings, serverWorld.rand);
+            });
+
+
 
             player.sendStatusMessage(new StringTextComponent("Reality spawned: " + structureName), false);
             held.shrink(1);
@@ -229,7 +255,7 @@ public class RealitySpawner extends Block {
                         // Short-circuit early if we find more than one
                         if (spawnerCount > 1) {
                             player.sendStatusMessage(
-                                    new StringTextComponent("Containment frame contains multiple Reality Spawners! Remove extras."),
+                                    new StringTextComponent("Containment barrier contains multiple Reality Spawners! Remove extras."),
                                     false
                             );
                             return false;
@@ -255,7 +281,7 @@ public class RealitySpawner extends Block {
                     boolean isSpawnerBlock = isSpawnerHere || block instanceof RealitySpawner;
 
                     if (!isContainment && !isSpawnerBlock) {
-                        player.sendStatusMessage(new StringTextComponent("Containment bubble incomplete."), false);
+                        player.sendStatusMessage(new StringTextComponent("Containment Barrier incomplete."), false);
                         return false;
                     }
                 }
@@ -278,19 +304,10 @@ public class RealitySpawner extends Block {
 
         if (!interiorErrors.isEmpty()) {
             PreviewRenderer.setInteriorErrors(interiorErrors);
-            player.sendStatusMessage(new StringTextComponent("Containment area obstructed: clear interior blocks."), false);
+            player.sendStatusMessage(new StringTextComponent("Gateway unable to form: clear interior blocks."), true);
             return false;
         } else {
             PreviewRenderer.clearInteriorErrors();
-        }
-
-        // --- Entity damage unchanged ---
-        AxisAlignedBB box = new AxisAlignedBB(startX, startY, startZ, endX + 1, endY + 1, endZ + 1);
-        List<LivingEntity> entities = world.getEntitiesWithinAABB(LivingEntity.class, box);
-        for (LivingEntity e : entities) {
-            if (!(e instanceof PlayerEntity && e.getUniqueID().equals(player.getUniqueID()))) {
-                e.attackEntityFrom(DamageSource.OUT_OF_WORLD, 4.0F);
-            }
         }
 
         return true;
@@ -298,18 +315,54 @@ public class RealitySpawner extends Block {
 
 
     private BlockPos getBubbleInteriorOrigin(BlockPos spawnerPos, Direction facing) {
-        // Interior origin should line up with computeBubbleOutline / validateBubble bounds
-        // This returns the position where the structure template will be placed.
+        // Adjust so structure spawns 1 block up and inset from front/right walls
         switch (facing) {
             case NORTH:
-                return spawnerPos.add(-7, 0, -14); // one less because front face included
+                return spawnerPos.add(-8, 1, -15); // back 15, inset 1 from right/front, up 1
             case SOUTH:
-                return spawnerPos.add(-7, 0, 1);
+                return spawnerPos.add(-7, 1, 1);   // forward-facing, inset from right/front, up 1
             case WEST:
-                return spawnerPos.add(-14, 0, -7);
+                return spawnerPos.add(-14, 1, -8); // back 14, up 1, inset 1
             case EAST:
             default:
-                return spawnerPos.add(1, 0, -7);
+                return spawnerPos.add(1, 1, -7);   // inset 1 from front/right, up 1
+        }
+    }
+
+    private void spawnBlackHole(ServerWorld world, BlockPos posCenter) {
+        double cx = posCenter.getX() + 7.5;
+        double cy = posCenter.getY() + 7.5;
+        double cz = posCenter.getZ() + 7.5;
+
+        world.playSound(null, posCenter, SoundEvents.BLOCK_PORTAL_TRAVEL, SoundCategory.BLOCKS, 1.0f, 0.5f);
+        world.playSound(null, posCenter, SoundEvents.BLOCK_END_PORTAL_SPAWN, SoundCategory.BLOCKS, 1.0f, 0.9f);
+
+        for (int i = 0; i < 200; i++) {
+            double angle = world.rand.nextDouble() * Math.PI * 2;
+            double radius = 4.0 * world.rand.nextDouble();
+            double height = (world.rand.nextDouble() - 0.5) * 5.0;
+
+            double px = cx + Math.cos(angle) * radius;
+            double py = cy + height;
+            double pz = cz + Math.sin(angle) * radius;
+
+            // Inward motion toward the center
+            double mx = (cx - px) * 0.1;
+            double my = (cy - py) * 0.1;
+            double mz = (cz - pz) * 0.1;
+
+            // Purple void dust + end rod = black-hole glow
+            world.spawnParticle(ParticleTypes.PORTAL, px, py, pz, 0, mx, my, mz, 0.01);
+            world.spawnParticle(ParticleTypes.END_ROD, px, py, pz, 0, mx * 0.5, my * 0.5, mz * 0.5, 0.005);
+
+            if (i % 15 == 0) {
+                world.spawnParticle(ParticleTypes.DRAGON_BREATH,
+                        cx + (world.rand.nextGaussian() * 0.2),
+                        cy + (world.rand.nextGaussian() * 0.2),
+                        cz + (world.rand.nextGaussian() * 0.2),
+                        1, // count
+                        0.0D, 0.0D, 0.0D, 0.0D);
+            }
         }
     }
 
@@ -319,6 +372,74 @@ public class RealitySpawner extends Block {
         if (!dropsOriginal.isEmpty())
             return dropsOriginal;
         return Collections.singletonList(new ItemStack(this, 1));
+    }
+
+    private void damageEntitiesInBubble(ServerWorld world, BlockPos spawnerPos, Direction facing) {
+        // Compute bubble bounds (same as validateBubble)
+        int startX, endX, startY, endY, startZ, endZ;
+        startY = spawnerPos.getY();
+        endY = spawnerPos.getY() + 15;
+
+        switch (facing) {
+            case NORTH:
+                startX = spawnerPos.getX() - 8;
+                endX = spawnerPos.getX() + 7;
+                startZ = spawnerPos.getZ() - 15;
+                endZ = spawnerPos.getZ();
+                break;
+            case SOUTH:
+                startX = spawnerPos.getX() - 8;
+                endX = spawnerPos.getX() + 7;
+                startZ = spawnerPos.getZ();
+                endZ = spawnerPos.getZ() + 15;
+                break;
+            case WEST:
+                startX = spawnerPos.getX() - 15;
+                endX = spawnerPos.getX();
+                startZ = spawnerPos.getZ() - 8;
+                endZ = spawnerPos.getZ() + 7;
+                break;
+            case EAST:
+            default:
+                startX = spawnerPos.getX();
+                endX = spawnerPos.getX() + 15;
+                startZ = spawnerPos.getZ() - 8;
+                endZ = spawnerPos.getZ() + 7;
+                break;
+        }
+
+        AxisAlignedBB box = new AxisAlignedBB(startX, startY, startZ, endX + 1, endY + 1, endZ + 1);
+        List<LivingEntity> entities = world.getEntitiesWithinAABB(LivingEntity.class, box);
+        for (LivingEntity e : entities) {
+            e.attackEntityFrom(DamageSource.OUT_OF_WORLD, 4.0F);
+        }
+    }
+
+    private void collapseGateway(ServerWorld world, BlockPos posCenter) {
+        double cx = posCenter.getX() + 7.5;
+        double cy = posCenter.getY() + 7.5;
+        double cz = posCenter.getZ() + 7.5;
+
+        world.playSound(null, posCenter, SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.BLOCKS, 1.2f, 0.6f);
+        world.playSound(null, posCenter, SoundEvents.BLOCK_END_PORTAL_FRAME_FILL, SoundCategory.BLOCKS, 1.0f, 0.8f);
+
+        // Inward particle pull + flash
+        for (int i = 0; i < 300; i++) {
+            double angle = world.rand.nextDouble() * Math.PI * 2;
+            double radius = 6.0 * world.rand.nextDouble();
+            double height = (world.rand.nextDouble() - 0.5) * 6.0;
+
+            double px = cx + Math.cos(angle) * radius;
+            double py = cy + height;
+            double pz = cz + Math.sin(angle) * radius;
+
+            double mx = (cx - px) * 0.3;
+            double my = (cy - py) * 0.3;
+            double mz = (cz - pz) * 0.3;
+
+            world.spawnParticle(ParticleTypes.PORTAL, px, py, pz, 0, mx, my, mz, 0.05);
+            world.spawnParticle(ParticleTypes.EXPLOSION_EMITTER, cx, cy, cz, 0, 0, 0, 0, 1.0);
+        }
     }
 
 }
