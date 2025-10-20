@@ -150,7 +150,7 @@ public class RealitySpawner extends Block {
             }
         });
 
-            player.sendStatusMessage(new StringTextComponent("Reality spawned: " + structureName), false);
+         //   player.sendStatusMessage(new StringTextComponent("Reality spawned: " + structureName), false);
             held.shrink(1);
 
             // Set to active (on) after successful activation

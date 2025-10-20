@@ -5,9 +5,9 @@ loaderVersion="[36,)"
 license="All rights reserved"
 
 [[mods]]
-itemIcon="minecraft:stick"
+itemIcon="reality_spawner:random_chip"
 
-configBackground="minecraft:textures/block/spawner.png"
+configBackground="reality_spawner:textures/block/reality_spawner.png"
 
 modId="reality_spawner"
 
