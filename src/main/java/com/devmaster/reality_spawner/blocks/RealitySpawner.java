@@ -139,9 +139,16 @@ public class RealitySpawner extends Block {
             // Finally spawn the structure after total ~13 seconds (460 ticks)
             DelayedTaskScheduler.schedule(serverWorld.getServer(), 460, () -> {
                 template.func_237144_a_(serverWorld, interiorStart, settings, serverWorld.rand);
-            });
 
+            // Play a stabilization sound
+            serverWorld.playSound(null, pos, SoundEvents.BLOCK_BEACON_DEACTIVATE, SoundCategory.BLOCKS, 0.8f, 1.0f);
 
+            // Turn the Reality Spawner back OFF
+            BlockState current = serverWorld.getBlockState(pos);
+            if (current.getBlock() instanceof RealitySpawner && current.get(ACTIVE)) {
+                serverWorld.setBlockState(pos, current.with(ACTIVE, false), 3);
+            }
+        });
 
             player.sendStatusMessage(new StringTextComponent("Reality spawned: " + structureName), false);
             held.shrink(1);
