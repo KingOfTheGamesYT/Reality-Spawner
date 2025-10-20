@@ -110,4 +110,7 @@ publishing {
             url "file:///${project.projectDir}/mcmodsrepo"
         }
     }
+    compileJava {
+        options.encoding = 'UTF-8'
+    }
 }

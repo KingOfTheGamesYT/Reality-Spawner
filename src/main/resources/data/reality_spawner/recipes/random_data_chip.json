@@ -1,0 +1,32 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "#QS",
+    "QEC",
+    "#QH"
+  ],
+  "key": {
+    "#": {
+      "item": "minecraft:repeater"
+    },
+    "Q": {
+      "item": "minecraft:quartz"
+    },
+    "S": {
+      "item": "minecraft:sand"
+    },
+    "E": {
+      "item": "minecraft:end_stone"
+    },
+    "C": {
+      "item": "minecraft:comparator"
+    },
+    "H": {
+      "item": "minecraft:crimson_planks"
+    }
+  },
+  "result": {
+    "item": "reality_spawner:random_chip",
+    "count": 1
+  }
+}
