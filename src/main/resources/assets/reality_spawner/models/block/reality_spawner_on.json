@@ -1,10 +1,10 @@
 {
   "parent": "block/orientable",
   "textures": {
-    "top": "reality_spawner:blocks/reality_spawner_top",
-    "bottom": "reality_spawner:blocks/reality_spawner_bottom",
-    "side": "reality_spawner:blocks/reality_spawner_side",
-    "front": "reality_spawner:blocks/reality_spawner_front_on"
+    "top": "reality_spawner:block/reality_spawner_top",
+    "bottom": "reality_spawner:block/reality_spawner_bottom",
+    "side": "reality_spawner:block/reality_spawner_side",
+    "front": "reality_spawner:block/reality_spawner_front_on"
 
   }
 }
