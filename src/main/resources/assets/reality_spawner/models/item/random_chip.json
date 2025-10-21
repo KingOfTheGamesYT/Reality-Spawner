@@ -1,6 +1,6 @@
 {
 	"parent": "item/generated",
 	"textures": {
-		"layer0": "reality_spawner:items/random_chip"
+		"layer0": "reality_spawner:item/random_chip"
 	}
 }

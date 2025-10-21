@@ -3,34 +3,40 @@ package com.devmaster.reality_spawner.blocks;
 import com.devmaster.reality_spawner.client.render.PreviewRenderer;
 import com.devmaster.reality_spawner.items.DataChip;
 import com.devmaster.reality_spawner.items.RandomDataChip;
-
 import com.devmaster.reality_spawner.misc.ContainmentProcessor;
 import com.devmaster.reality_spawner.misc.DelayedTaskScheduler;
 import com.devmaster.reality_spawner.misc.RegistryHandler;
-import net.minecraft.block.*;
-import net.minecraft.block.material.Material;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.BlockItemUseContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.SwordItem;
-import net.minecraft.loot.LootContext;
-import net.minecraft.particles.ParticleTypes;
-import net.minecraft.state.BooleanProperty;
-import net.minecraft.state.DirectionProperty;
-import net.minecraft.state.StateContainer;
-import net.minecraft.state.properties.BlockStateProperties;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.*;
-import net.minecraft.util.concurrent.TickDelayedTask;
-import net.minecraft.util.math.*;
-import net.minecraft.util.text.StringTextComponent;
-import net.minecraft.world.World;
-import net.minecraft.world.gen.feature.template.BlockIgnoreStructureProcessor;
-import net.minecraft.world.server.ServerWorld;
-import net.minecraft.world.gen.feature.template.PlacementSettings;
-import net.minecraft.world.gen.feature.template.Template;
-import net.minecraft.world.gen.feature.template.TemplateManager;
-import net.minecraftforge.common.ToolType;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.DirectionProperty;
+import net.minecraft.world.level.levelgen.structure.templatesystem.BlockIgnoreProcessor;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 
 import java.util.*;
 
@@ -40,229 +46,289 @@ public class RealitySpawner extends Block {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
 
     public RealitySpawner() {
-        super(AbstractBlock.Properties
-                .create(Material.IRON)
-                .hardnessAndResistance(4.0f, 10000)
-                .setRequiresTool()
-                .harvestLevel(2)
+        super(BlockBehaviour.Properties.of()
                 .sound(SoundType.METAL)
-                .harvestTool(ToolType.PICKAXE));
-
-        this.setDefaultState(this.stateContainer.getBaseState()
-                .with(FACING, Direction.NORTH)
-                .with(ACTIVE, false)); // default inactive
-
+                .strength(4.0f, 10000f)
+                .requiresCorrectToolForDrops());
+        this.registerDefaultState(this.stateDefinition.any()
+                .setValue(FACING, Direction.NORTH)
+                .setValue(ACTIVE, false));
     }
 
     @Override
-    protected void fillStateContainer(StateContainer.Builder<Block, BlockState> builder) {
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING, ACTIVE);
     }
 
     @Override
-    public BlockState getStateForPlacement(BlockItemUseContext context) {
-        return this.getDefaultState().with(FACING, context.getPlacementHorizontalFacing());
+    public BlockState getStateForPlacement(BlockPlaceContext context) {
+        return this.defaultBlockState().setValue(FACING, context.getHorizontalDirection());
     }
 
     @Override
-    public ActionResultType onBlockActivated(BlockState state, World world, BlockPos pos,
-                                             PlayerEntity player, Hand hand, BlockRayTraceResult hit) {
-        if (world.isRemote) {
-            return ActionResultType.SUCCESS;
+    public InteractionResult use(BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
+        if (level.isClientSide) {
+            return InteractionResult.SUCCESS;
         }
 
-        ItemStack held = player.getHeldItem(hand);
-        Direction facing = state.get(FACING);
+        ItemStack held = player.getItemInHand(hand);
+        Direction facing = state.getValue(FACING);
 
         // Sneak + right-click toggles preview
-        if (player.isSneaking() && held.isEmpty()) {
+        if (player.isShiftKeyDown() && held.isEmpty()) {
             if (PreviewRenderer.isPreviewActiveAt(pos)) {
                 PreviewRenderer.clearPreview();
-                player.sendStatusMessage(new StringTextComponent("Preview cleared."), true);
+                player.displayClientMessage(Component.literal("Preview cleared."), true);
             } else {
                 Set<BlockPos> outline = computeBubbleOutline(pos, facing);
                 PreviewRenderer.setPreview(pos, outline);
-                player.sendStatusMessage(new StringTextComponent("Preview activated."), true);
+                player.displayClientMessage(Component.literal("Preview activated."), true);
             }
-            return ActionResultType.SUCCESS;
+            return InteractionResult.SUCCESS;
         }
 
-        // Normal right-click with Data Chip
-        if (held.getItem() instanceof SwordItem || held.getItem() instanceof RandomDataChip) {
-            boolean valid = validateBubble(world, pos, player, facing);
-            if (!valid) return ActionResultType.SUCCESS;
+        // Normal right-click with a Data Chip or RandomDataChip
+        if (held.getItem() instanceof RandomDataChip || held.getItem() instanceof DataChip) {
+            if (!validateBubble(level, pos, player, facing)) return InteractionResult.SUCCESS;
 
             String structureName = null;
-            if (held.getItem() instanceof DataChip) {
-                structureName = ((DataChip) held.getItem()).getStructureName();
-            } else if (held.getItem() instanceof RandomDataChip) {
-                structureName = ((RandomDataChip) held.getItem()).getRandomStructure((ServerWorld) world);
+            if (held.getItem() instanceof DataChip dataChip) {
+                structureName = dataChip.getStructureName();
+            } else if (held.getItem() instanceof RandomDataChip chip) {
+                structureName = chip.getRandomStructure((ServerLevel) level);
             }
 
             if (structureName == null) {
-                player.sendStatusMessage(new StringTextComponent("No valid structure found for this chip!"), false);
-                return ActionResultType.SUCCESS;
+                player.displayClientMessage(Component.literal("No valid structure found for this chip!"), false);
+                return InteractionResult.SUCCESS;
             }
 
-            ServerWorld serverWorld = (ServerWorld) world;
-            TemplateManager manager = serverWorld.getStructureTemplateManager();
+            ServerLevel serverLevel = (ServerLevel) level;
             ResourceLocation rl = new ResourceLocation("reality_spawner", structureName);
-            Template template = manager.getTemplate(rl);
-
-            if (template == null) {
-                player.sendStatusMessage(new StringTextComponent("Failed to load structure: " + rl), false);
-                return ActionResultType.SUCCESS;
+            Optional<StructureTemplate> optional = serverLevel.getStructureManager().get(rl);
+            if (optional.isEmpty()) {
+                player.displayClientMessage(Component.literal("Failed to load structure: " + rl), false);
+                return InteractionResult.SUCCESS;
             }
 
-            BlockPos interiorStart = getBubbleInteriorOrigin(pos, facing).add(1, 0, 1);
-            PlacementSettings settings = new PlacementSettings()
-                    .addProcessor(new ContainmentProcessor(interiorStart, interiorStart.add(13, 14, 13)))
-                    .addProcessor(BlockIgnoreStructureProcessor.AIR);
+            StructureTemplate template = optional.get();
+            BlockPos interiorStart = getBubbleInteriorOrigin(pos, facing).offset(1, 0, 1);
+            StructurePlaceSettings settings = new StructurePlaceSettings()
+                    .addProcessor(new ContainmentProcessor(interiorStart, interiorStart.offset(13, 14, 13)))
+                    .addProcessor(BlockIgnoreProcessor.AIR);
 
-            spawnBlackHole(serverWorld, interiorStart);
+            spawnBlackHole(serverLevel, interiorStart);
 
-            int currentTick = serverWorld.getServer().getTickCounter();
-
-            // Phase 1–2: Gateway build-up (9 seconds)
+            // Schedule build-up and collapse events
             for (int i = 0; i < 300; i++) {
-                int tickDelay = i;
-                DelayedTaskScheduler.schedule(serverWorld.getServer(), tickDelay, () -> {
-                    spawnBlackHole(serverWorld, getBubbleInteriorOrigin(pos, facing));
-                    damageEntitiesInBubble(serverWorld, pos, facing);
+                int delay = i;
+                DelayedTaskScheduler.schedule(serverLevel.getServer(), delay, () -> {
+                    spawnBlackHole(serverLevel, getBubbleInteriorOrigin(pos, facing));
+                    damageEntitiesInBubble(serverLevel, pos, facing);
                 });
             }
-            // Phase 3: Collapse
-            DelayedTaskScheduler.schedule(serverWorld.getServer(), 320, () -> {
-                collapseGateway(serverWorld, getBubbleInteriorOrigin(pos, facing));
+
+            DelayedTaskScheduler.schedule(serverLevel.getServer(), 320, () ->
+                    collapseGateway(serverLevel, getBubbleInteriorOrigin(pos, facing)));
+
+            DelayedTaskScheduler.schedule(serverLevel.getServer(), 460, () -> {
+                template.placeInWorld(serverLevel, interiorStart, interiorStart, settings, RandomSource.create(), 2);
+                serverLevel.playSound(null, pos, SoundEvents.BEACON_DEACTIVATE, SoundSource.BLOCKS, 0.8f, 1.0f);
+
+                BlockState current = serverLevel.getBlockState(pos);
+                if (current.getBlock() instanceof RealitySpawner && current.getValue(ACTIVE)) {
+                    serverLevel.setBlock(pos, current.setValue(ACTIVE, false), 3);
+                }
             });
 
-            // Finally spawn the structure after total ~13 seconds (460 ticks)
-            DelayedTaskScheduler.schedule(serverWorld.getServer(), 460, () -> {
-                template.func_237144_a_(serverWorld, interiorStart, settings, serverWorld.rand);
-
-            // Play a stabilization sound
-            serverWorld.playSound(null, pos, SoundEvents.BLOCK_BEACON_DEACTIVATE, SoundCategory.BLOCKS, 0.8f, 1.0f);
-
-            // Turn the Reality Spawner back OFF
-            BlockState current = serverWorld.getBlockState(pos);
-            if (current.getBlock() instanceof RealitySpawner && current.get(ACTIVE)) {
-                serverWorld.setBlockState(pos, current.with(ACTIVE, false), 3);
-            }
-        });
-
-         //   player.sendStatusMessage(new StringTextComponent("Reality spawned: " + structureName), false);
             held.shrink(1);
-
-            // Set to active (on) after successful activation
-            world.setBlockState(pos, state.with(ACTIVE, true), 3);
-
-            return ActionResultType.SUCCESS;
-
+            level.setBlock(pos, state.setValue(ACTIVE, true), 3);
+            return InteractionResult.SUCCESS;
         }
 
-        return ActionResultType.PASS;
+        return InteractionResult.PASS;
     }
 
     private Set<BlockPos> computeBubbleOutline(BlockPos spawnerPos, Direction facing) {
         Set<BlockPos> outline = new HashSet<>();
-        int startX, endX, startY, endY, startZ, endZ;
-
-        // Bottom of cube is same Y as spawner; top is +15 so height = 16
-        startY = spawnerPos.getY();
-        endY = spawnerPos.getY() + 15;
-
-        // Compute bounds so the front face *includes* the spawner block
-        switch (facing) {
-            case NORTH:
-                startX = spawnerPos.getX() - 8;
-                endX = spawnerPos.getX() + 7;
-                startZ = spawnerPos.getZ() - 15; // extend 15 behind -> front face at spawner
-                endZ = spawnerPos.getZ();
-                break;
-            case SOUTH:
-                startX = spawnerPos.getX() - 8;
-                endX = spawnerPos.getX() + 7;
-                startZ = spawnerPos.getZ();
-                endZ = spawnerPos.getZ() + 15;
-                break;
-            case WEST:
-                startX = spawnerPos.getX() - 15;
-                endX = spawnerPos.getX();
-                startZ = spawnerPos.getZ() - 8;
-                endZ = spawnerPos.getZ() + 7;
-                break;
-            case EAST:
-            default:
-                startX = spawnerPos.getX();
-                endX = spawnerPos.getX() + 15;
-                startZ = spawnerPos.getZ() - 8;
-                endZ = spawnerPos.getZ() + 7;
-                break;
-        }
-
-        for (int x = startX; x <= endX; x++) {
-            for (int y = startY; y <= endY; y++) {
-                for (int z = startZ; z <= endZ; z++) {
-                    boolean isEdge = (x == startX || x == endX || y == startY || y == endY || z == startZ || z == endZ);
-                    if (isEdge) {
-                        outline.add(new BlockPos(x, y, z));
-                    }
-                }
-            }
-        }
-
-        return outline;
-    }
-
-    private boolean validateBubble(World world, BlockPos spawnerPos, PlayerEntity player, Direction facing) {
-        int startX, endX, startY, endY, startZ, endZ;
-
-        startY = spawnerPos.getY();
-        endY = spawnerPos.getY() + 15;
+        int startY = spawnerPos.getY();
+        int endY = spawnerPos.getY() + 15;
+        int startX, endX, startZ, endZ;
 
         switch (facing) {
-            case NORTH:
+            case NORTH -> {
                 startX = spawnerPos.getX() - 8;
                 endX = spawnerPos.getX() + 7;
                 startZ = spawnerPos.getZ() - 15;
                 endZ = spawnerPos.getZ();
-                break;
-            case SOUTH:
+            }
+            case SOUTH -> {
                 startX = spawnerPos.getX() - 8;
                 endX = spawnerPos.getX() + 7;
                 startZ = spawnerPos.getZ();
                 endZ = spawnerPos.getZ() + 15;
-                break;
-            case WEST:
+            }
+            case WEST -> {
                 startX = spawnerPos.getX() - 15;
                 endX = spawnerPos.getX();
                 startZ = spawnerPos.getZ() - 8;
                 endZ = spawnerPos.getZ() + 7;
-                break;
-            case EAST:
-            default:
+            }
+            default -> {
                 startX = spawnerPos.getX();
                 endX = spawnerPos.getX() + 15;
                 startZ = spawnerPos.getZ() - 8;
                 endZ = spawnerPos.getZ() + 7;
-                break;
+            }
+        }
+
+        for (int x = startX; x <= endX; x++)
+            for (int y = startY; y <= endY; y++)
+                for (int z = startZ; z <= endZ; z++)
+                    if (x == startX || x == endX || y == startY || y == endY || z == startZ || z == endZ)
+                        outline.add(new BlockPos(x, y, z));
+
+        return outline;
+    }
+
+    private void spawnBlackHole(ServerLevel level, BlockPos posCenter) {
+        RandomSource rand = level.getRandom();
+        double cx = posCenter.getX() + 7.5;
+        double cy = posCenter.getY() + 7.5;
+        double cz = posCenter.getZ() + 7.5;
+
+        level.playSound(null, posCenter, SoundEvents.PORTAL_TRAVEL, SoundSource.BLOCKS, 1.0f, 0.5f);
+        level.playSound(null, posCenter, SoundEvents.END_PORTAL_SPAWN, SoundSource.BLOCKS, 0.4f, 1.0f);
+
+        for (int i = 0; i < 200; i++) {
+            double angle = rand.nextDouble() * Math.PI * 2;
+            double radius = 4.0 * rand.nextDouble();
+            double height = (rand.nextDouble() - 0.5) * 5.0;
+            double px = cx + Math.cos(angle) * radius;
+            double py = cy + height;
+            double pz = cz + Math.sin(angle) * radius;
+            double mx = (cx - px) * 0.1;
+            double my = (cy - py) * 0.1;
+            double mz = (cz - pz) * 0.1;
+
+            level.sendParticles(ParticleTypes.PORTAL, px, py, pz, 0, mx, my, mz, 0.01);
+            level.sendParticles(ParticleTypes.END_ROD, px, py, pz, 0, mx * 0.5, my * 0.5, mz * 0.5, 0.005);
+            if (i % 15 == 0)
+                level.sendParticles(ParticleTypes.DRAGON_BREATH, cx, cy, cz, 1, 0, 0, 0, 0);
+        }
+    }
+
+    private void damageEntitiesInBubble(ServerLevel level, BlockPos spawnerPos, Direction facing) {
+        // Compute bubble bounds (same logic as validateBubble)
+        int startY = spawnerPos.getY() + 1; // interior only, exclude walls
+        int endY = spawnerPos.getY() + 14;
+        int startX, endX, startZ, endZ;
+
+        switch (facing) {
+            case NORTH -> {
+                startX = spawnerPos.getX() - 7;
+                endX = spawnerPos.getX() + 6;
+                startZ = spawnerPos.getZ() - 14;
+                endZ = spawnerPos.getZ() - 1;
+            }
+            case SOUTH -> {
+                startX = spawnerPos.getX() - 7;
+                endX = spawnerPos.getX() + 6;
+                startZ = spawnerPos.getZ() + 1;
+                endZ = spawnerPos.getZ() + 14;
+            }
+            case WEST -> {
+                startX = spawnerPos.getX() - 14;
+                endX = spawnerPos.getX() - 1;
+                startZ = spawnerPos.getZ() - 7;
+                endZ = spawnerPos.getZ() + 6;
+            }
+            default -> { // EAST
+                startX = spawnerPos.getX() + 1;
+                endX = spawnerPos.getX() + 14;
+                startZ = spawnerPos.getZ() - 7;
+                endZ = spawnerPos.getZ() + 6;
+            }
+        }
+
+        // Define exact interior bounding box (inclusive)
+        AABB interiorBox = new AABB(startX, startY, startZ, endX + 1, endY + 1, endZ + 1);
+
+        // Damage only entities inside that interior volume
+        List<LivingEntity> entities = level.getEntitiesOfClass(LivingEntity.class, interiorBox);
+        for (LivingEntity e : entities) {
+            e.hurt(level.damageSources().fellOutOfWorld(), 4.0F);
+        }
+    }
+
+    private void collapseGateway(ServerLevel level, BlockPos posCenter) {
+        double cx = posCenter.getX() + 7.5;
+        double cy = posCenter.getY() + 7.5;
+        double cz = posCenter.getZ() + 7.5;
+
+        level.playSound(null, posCenter, SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS, 1.2f, 0.6f);
+        level.playSound(null, posCenter, SoundEvents.END_PORTAL_FRAME_FILL, SoundSource.BLOCKS, 1.0f, 0.8f);
+
+        for (int i = 0; i < 300; i++) {
+            double angle = level.random.nextDouble() * Math.PI * 2;
+            double radius = 6.0 * level.random.nextDouble();
+            double height = (level.random.nextDouble() - 0.5) * 6.0;
+            double px = cx + Math.cos(angle) * radius;
+            double py = cy + height;
+            double pz = cz + Math.sin(angle) * radius;
+            double mx = (cx - px) * 0.3;
+            double my = (cy - py) * 0.3;
+            double mz = (cz - pz) * 0.3;
+
+            level.sendParticles(ParticleTypes.PORTAL, px, py, pz, 0, mx, my, mz, 0.05);
+            level.sendParticles(ParticleTypes.EXPLOSION_EMITTER, cx, cy, cz, 0, 0, 0, 0, 1.0);
+        }
+    }
+
+    private boolean validateBubble(Level level, BlockPos spawnerPos, Player player, Direction facing) {
+        int startY = spawnerPos.getY();
+        int endY = spawnerPos.getY() + 15;
+        int startX, endX, startZ, endZ;
+
+        switch (facing) {
+            case NORTH -> {
+                startX = spawnerPos.getX() - 8;
+                endX = spawnerPos.getX() + 7;
+                startZ = spawnerPos.getZ() - 15;
+                endZ = spawnerPos.getZ();
+            }
+            case SOUTH -> {
+                startX = spawnerPos.getX() - 8;
+                endX = spawnerPos.getX() + 7;
+                startZ = spawnerPos.getZ();
+                endZ = spawnerPos.getZ() + 15;
+            }
+            case WEST -> {
+                startX = spawnerPos.getX() - 15;
+                endX = spawnerPos.getX();
+                startZ = spawnerPos.getZ() - 8;
+                endZ = spawnerPos.getZ() + 7;
+            }
+            default -> {
+                startX = spawnerPos.getX();
+                endX = spawnerPos.getX() + 15;
+                startZ = spawnerPos.getZ() - 8;
+                endZ = spawnerPos.getZ() + 7;
+            }
         }
 
         // --- Check for multiple Reality Spawners ---
         int spawnerCount = 0;
-
-        // Check all blocks in the cube (edges + interior) for RealitySpawner instances
         for (int x = startX; x <= endX; x++) {
             for (int y = startY; y <= endY; y++) {
                 for (int z = startZ; z <= endZ; z++) {
                     BlockPos checkPos = new BlockPos(x, y, z);
-                    Block block = world.getBlockState(checkPos).getBlock();
+                    Block block = level.getBlockState(checkPos).getBlock();
                     if (block instanceof RealitySpawner) {
                         spawnerCount++;
-                        // Short-circuit early if we find more than one
                         if (spawnerCount > 1) {
-                            player.sendStatusMessage(
-                                    new StringTextComponent("Containment barrier contains multiple Reality Spawners! Remove extras."),
+                            player.displayClientMessage(
+                                    Component.literal("Containment barrier contains multiple Reality Spawners! Remove extras."),
                                     false
                             );
                             return false;
@@ -280,7 +346,7 @@ public class RealitySpawner extends Block {
                     if (!isEdge) continue;
 
                     BlockPos checkPos = new BlockPos(x, y, z);
-                    BlockState state = world.getBlockState(checkPos);
+                    BlockState state = level.getBlockState(checkPos);
                     Block block = state.getBlock();
 
                     boolean isSpawnerHere = checkPos.equals(spawnerPos);
@@ -288,7 +354,7 @@ public class RealitySpawner extends Block {
                     boolean isSpawnerBlock = isSpawnerHere || block instanceof RealitySpawner;
 
                     if (!isContainment && !isSpawnerBlock) {
-                        player.sendStatusMessage(new StringTextComponent("Containment Barrier incomplete."), false);
+                        player.displayClientMessage(Component.literal("Containment Barrier incomplete."), false);
                         return false;
                     }
                 }
@@ -302,7 +368,7 @@ public class RealitySpawner extends Block {
                 for (int z = startZ + 1; z < endZ; z++) {
                     BlockPos checkPos = new BlockPos(x, y, z);
                     if (checkPos.equals(spawnerPos)) continue;
-                    if (!world.isAirBlock(checkPos)) {
+                    if (!level.isEmptyBlock(checkPos)) {
                         interiorErrors.add(checkPos);
                     }
                 }
@@ -311,7 +377,7 @@ public class RealitySpawner extends Block {
 
         if (!interiorErrors.isEmpty()) {
             PreviewRenderer.setInteriorErrors(interiorErrors);
-            player.sendStatusMessage(new StringTextComponent("Gateway unable to form: clear interior blocks."), true);
+            player.displayClientMessage(Component.literal("Gateway unable to form: clear interior blocks."), true);
             return false;
         } else {
             PreviewRenderer.clearInteriorErrors();
@@ -320,133 +386,23 @@ public class RealitySpawner extends Block {
         return true;
     }
 
-
     private BlockPos getBubbleInteriorOrigin(BlockPos spawnerPos, Direction facing) {
         // Adjust so structure spawns 1 block up and inset from front/right walls
-        switch (facing) {
-            case NORTH:
-                return spawnerPos.add(-8, 1, -15); // back 15, inset 1 from right/front, up 1
-            case SOUTH:
-                return spawnerPos.add(-7, 1, 1);   // forward-facing, inset from right/front, up 1
-            case WEST:
-                return spawnerPos.add(-14, 1, -8); // back 14, up 1, inset 1
-            case EAST:
-            default:
-                return spawnerPos.add(1, 1, -7);   // inset 1 from front/right, up 1
-        }
-    }
-
-    private void spawnBlackHole(ServerWorld world, BlockPos posCenter) {
-        double cx = posCenter.getX() + 7.5;
-        double cy = posCenter.getY() + 7.5;
-        double cz = posCenter.getZ() + 7.5;
-
-        world.playSound(null, posCenter, SoundEvents.BLOCK_PORTAL_TRAVEL, SoundCategory.BLOCKS, 1.0f, 0.5f);
-        world.playSound(null, posCenter, SoundEvents.BLOCK_END_PORTAL_SPAWN, SoundCategory.BLOCKS, 1.0f, 0.9f);
-
-        for (int i = 0; i < 200; i++) {
-            double angle = world.rand.nextDouble() * Math.PI * 2;
-            double radius = 4.0 * world.rand.nextDouble();
-            double height = (world.rand.nextDouble() - 0.5) * 5.0;
-
-            double px = cx + Math.cos(angle) * radius;
-            double py = cy + height;
-            double pz = cz + Math.sin(angle) * radius;
-
-            // Inward motion toward the center
-            double mx = (cx - px) * 0.1;
-            double my = (cy - py) * 0.1;
-            double mz = (cz - pz) * 0.1;
-
-            // Purple void dust + end rod = black-hole glow
-            world.spawnParticle(ParticleTypes.PORTAL, px, py, pz, 0, mx, my, mz, 0.01);
-            world.spawnParticle(ParticleTypes.END_ROD, px, py, pz, 0, mx * 0.5, my * 0.5, mz * 0.5, 0.005);
-
-            if (i % 15 == 0) {
-                world.spawnParticle(ParticleTypes.DRAGON_BREATH,
-                        cx + (world.rand.nextGaussian() * 0.2),
-                        cy + (world.rand.nextGaussian() * 0.2),
-                        cz + (world.rand.nextGaussian() * 0.2),
-                        1, // count
-                        0.0D, 0.0D, 0.0D, 0.0D);
-            }
-        }
+        return switch (facing) {
+            case NORTH -> spawnerPos.offset(-8, 1, -15);
+            case SOUTH -> spawnerPos.offset(-7, 1, 1);
+            case WEST -> spawnerPos.offset(-14, 1, -8);
+            case EAST -> spawnerPos.offset(1, 1, -7);
+            default -> spawnerPos.offset(0, 1, 0); // fallback for UP/DOWN (shouldn’t happen)
+        };
     }
 
     @Override
-    public List<ItemStack> getDrops(BlockState state, LootContext.Builder builder) {
+    public List<ItemStack> getDrops(BlockState state, LootParams.Builder builder) {
         List<ItemStack> dropsOriginal = super.getDrops(state, builder);
         if (!dropsOriginal.isEmpty())
             return dropsOriginal;
-        return Collections.singletonList(new ItemStack(this, 1));
-    }
-
-    private void damageEntitiesInBubble(ServerWorld world, BlockPos spawnerPos, Direction facing) {
-        // Compute bubble bounds (same as validateBubble)
-        int startX, endX, startY, endY, startZ, endZ;
-        startY = spawnerPos.getY();
-        endY = spawnerPos.getY() + 15;
-
-        switch (facing) {
-            case NORTH:
-                startX = spawnerPos.getX() - 8;
-                endX = spawnerPos.getX() + 7;
-                startZ = spawnerPos.getZ() - 15;
-                endZ = spawnerPos.getZ();
-                break;
-            case SOUTH:
-                startX = spawnerPos.getX() - 8;
-                endX = spawnerPos.getX() + 7;
-                startZ = spawnerPos.getZ();
-                endZ = spawnerPos.getZ() + 15;
-                break;
-            case WEST:
-                startX = spawnerPos.getX() - 15;
-                endX = spawnerPos.getX();
-                startZ = spawnerPos.getZ() - 8;
-                endZ = spawnerPos.getZ() + 7;
-                break;
-            case EAST:
-            default:
-                startX = spawnerPos.getX();
-                endX = spawnerPos.getX() + 15;
-                startZ = spawnerPos.getZ() - 8;
-                endZ = spawnerPos.getZ() + 7;
-                break;
-        }
-
-        AxisAlignedBB box = new AxisAlignedBB(startX, startY, startZ, endX + 1, endY + 1, endZ + 1);
-        List<LivingEntity> entities = world.getEntitiesWithinAABB(LivingEntity.class, box);
-        for (LivingEntity e : entities) {
-            e.attackEntityFrom(DamageSource.OUT_OF_WORLD, 4.0F);
-        }
-    }
-
-    private void collapseGateway(ServerWorld world, BlockPos posCenter) {
-        double cx = posCenter.getX() + 7.5;
-        double cy = posCenter.getY() + 7.5;
-        double cz = posCenter.getZ() + 7.5;
-
-        world.playSound(null, posCenter, SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.BLOCKS, 1.2f, 0.6f);
-        world.playSound(null, posCenter, SoundEvents.BLOCK_END_PORTAL_FRAME_FILL, SoundCategory.BLOCKS, 1.0f, 0.8f);
-
-        // Inward particle pull + flash
-        for (int i = 0; i < 300; i++) {
-            double angle = world.rand.nextDouble() * Math.PI * 2;
-            double radius = 6.0 * world.rand.nextDouble();
-            double height = (world.rand.nextDouble() - 0.5) * 6.0;
-
-            double px = cx + Math.cos(angle) * radius;
-            double py = cy + height;
-            double pz = cz + Math.sin(angle) * radius;
-
-            double mx = (cx - px) * 0.3;
-            double my = (cy - py) * 0.3;
-            double mz = (cz - pz) * 0.3;
-
-            world.spawnParticle(ParticleTypes.PORTAL, px, py, pz, 0, mx, my, mz, 0.05);
-            world.spawnParticle(ParticleTypes.EXPLOSION_EMITTER, cx, cy, cz, 0, 0, 0, 0, 1.0);
-        }
+        return List.of(new ItemStack(this));
     }
 
 }

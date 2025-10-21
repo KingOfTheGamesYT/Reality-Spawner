@@ -2,17 +2,17 @@ package com.devmaster.reality_spawner.client.render;
 
 import com.devmaster.reality_spawner.blocks.RealitySpawner;
 import com.devmaster.reality_spawner.misc.RegistryHandler;
-import com.mojang.blaze3d.matrix.MatrixStack;
 
-import net.minecraft.block.BlockState;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.IRenderTypeBuffer;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.WorldRenderer;
-import net.minecraft.util.math.BlockPos;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RenderWorldLastEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -22,8 +22,8 @@ import java.util.Set;
 @Mod.EventBusSubscriber(bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public class PreviewRenderer {
 
-    private static Set<BlockPos> previewPositions = new HashSet<>();
-    private static Set<BlockPos> interiorErrors = new HashSet<>();
+    private static final Set<BlockPos> previewPositions = new HashSet<>();
+    private static final Set<BlockPos> interiorErrors = new HashSet<>();
     private static BlockPos spawnerPos = null;
     private static long activationTime = 0L;
 
@@ -55,66 +55,66 @@ public class PreviewRenderer {
     }
 
     @SubscribeEvent
-    public static void onRenderWorldLast(RenderWorldLastEvent event) {
-        if (previewPositions.isEmpty() && interiorErrors.isEmpty()) return;
+    public static void onRenderWorld(RenderLevelStageEvent event) {
+        // Only draw after solid blocks & entities (use AFTER_ENTITIES stage)
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) return;
 
         Minecraft mc = Minecraft.getInstance();
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         // Auto-expire after 5 minutes
-        if (System.currentTimeMillis() - activationTime > 300_000) {
+        if (System.currentTimeMillis() - activationTime > 300_000L) {
             clearPreview();
             return;
         }
 
         // Clear preview if spawner removed
-        if (spawnerPos != null && mc.world.isAirBlock(spawnerPos)) {
+        if (spawnerPos != null && mc.level.isEmptyBlock(spawnerPos)) {
             clearPreview();
             return;
         }
 
-        MatrixStack matrixStack = event.getMatrixStack();
-        IRenderTypeBuffer.Impl buffer = mc.getRenderTypeBuffers().getBufferSource();
+        PoseStack poseStack = event.getPoseStack();
+        MultiBufferSource.BufferSource buffer = mc.renderBuffers().bufferSource();
 
-        double camX = mc.getRenderManager().info.getProjectedView().x;
-        double camY = mc.getRenderManager().info.getProjectedView().y;
-        double camZ = mc.getRenderManager().info.getProjectedView().z;
+        double camX = event.getCamera().getPosition().x;
+        double camY = event.getCamera().getPosition().y;
+        double camZ = event.getCamera().getPosition().z;
 
-        // --- Draw bubble outline ---
+        // --- Draw containment bubble outline ---
         for (BlockPos pos : previewPositions) {
-            BlockState state = mc.world.getBlockState(pos);
+            BlockState state = mc.level.getBlockState(pos);
             float r, g, b;
 
-            // ✅ RealitySpawner block should be considered valid
             if (pos.equals(spawnerPos) || state.getBlock() instanceof RealitySpawner) {
                 r = 0f; g = 1f; b = 0f; // green
-            }
-            // ✅ Containment blocks
-            else if (state.getBlock() == RegistryHandler.CONTAINMENT_BLOCK.get() || state.getBlock() == RegistryHandler.CONTAINMENT_GLASS.get()) {
+            } else if (state.getBlock() == RegistryHandler.CONTAINMENT_BLOCK.get()
+                    || state.getBlock() == RegistryHandler.CONTAINMENT_GLASS.get()) {
                 r = 0f; g = 1f; b = 0f; // green
-            }
-            // ❌ Missing/incorrect blocks
-            else {
+            } else {
                 r = 1f; g = 0f; b = 0f; // red
             }
 
-            WorldRenderer.drawBoundingBox(matrixStack,
-                    buffer.getBuffer(RenderType.getLines()),
+            LevelRenderer.renderLineBox(
+                    poseStack,
+                    buffer.getBuffer(RenderType.lines()),
                     pos.getX() - camX, pos.getY() - camY, pos.getZ() - camZ,
                     pos.getX() + 1 - camX, pos.getY() + 1 - camY, pos.getZ() + 1 - camZ,
-                    r, g, b, 0.8f);
+                    r, g, b, 0.8f
+            );
         }
 
         // --- Draw interior errors (bright red) ---
         for (BlockPos pos : interiorErrors) {
-            WorldRenderer.drawBoundingBox(matrixStack,
-                    buffer.getBuffer(RenderType.getLines()),
+            LevelRenderer.renderLineBox(
+                    poseStack,
+                    buffer.getBuffer(RenderType.lines()),
                     pos.getX() - camX, pos.getY() - camY, pos.getZ() - camZ,
                     pos.getX() + 1 - camX, pos.getY() + 1 - camY, pos.getZ() + 1 - camZ,
-                    1f, 0f, 0f, 1.0f);
+                    1f, 0f, 0f, 1f
+            );
         }
 
-        buffer.finish();
+        buffer.endBatch(RenderType.lines());
     }
 }
-

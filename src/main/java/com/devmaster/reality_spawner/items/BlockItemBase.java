@@ -1,12 +1,11 @@
 package com.devmaster.reality_spawner.items;
 
-import net.minecraft.block.Block;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemGroup;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.level.block.Block;
 
 public class BlockItemBase extends BlockItem {
 
     public BlockItemBase(Block block) {
-        super(block, new Properties().group(ItemGroup.BUILDING_BLOCKS));
+        super(block, new Properties());
     }
 }

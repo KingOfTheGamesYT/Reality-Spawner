@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "reality_spawner:reality_spawner",
+    "reality_spawner:containment_block",
+    "reality_spawner:containment_glass"
+  ]
+}

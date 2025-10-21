@@ -1,13 +1,13 @@
 package com.devmaster.reality_spawner.items;
 
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroup;
-import net.minecraft.item.ItemUseContext;
-import net.minecraft.resources.IResourceManager;
-import net.minecraft.util.ActionResultType;
-import net.minecraft.util.ResourceLocation;
-import net.minecraft.util.text.StringTextComponent;
-import net.minecraft.world.server.ServerWorld;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.context.UseOnContext;
 
 import java.util.Random;
 import java.util.Set;
@@ -17,16 +17,19 @@ public class RandomDataChip extends Item {
     private static final Random RAND = new Random();
 
     public RandomDataChip() {
-        super(new Item.Properties().group(ItemGroup.MISC));
+        super(new Item.Properties());
     }
 
-    public String getRandomStructure(ServerWorld world) {
-        IResourceManager manager = world.getServer()
-                .getDataPackRegistries()
-                .getResourceManager();
+    /**
+     * Picks a random structure from datapack resources ending in "_reality.nbt"
+     */
+    public String getRandomStructure(ServerLevel level) {
+        MinecraftServer server = level.getServer();
+        ResourceManager manager = server.getResourceManager();
 
-        // Find all NBTs under structures/ that end with _reality.nbt
-        Set<String> valid = manager.getAllResourceLocations("structures", path -> path.endsWith("_reality.nbt"))
+        Set<String> valid = manager.listResources("structures",
+                        path -> path.getPath().endsWith("_reality.nbt"))
+                .keySet()
                 .stream()
                 .map(ResourceLocation::getPath)
                 .map(p -> p.replace("structures/", "").replace(".nbt", ""))
@@ -36,25 +39,26 @@ public class RandomDataChip extends Item {
             return null;
         }
 
-        // Randomly pick one
         int index = RAND.nextInt(valid.size());
         return valid.stream().skip(index).findFirst().orElse(null);
     }
 
     @Override
-    public ActionResultType onItemUse(ItemUseContext context) {
-        if (!context.getWorld().isRemote) {
-            ServerWorld serverWorld = (ServerWorld) context.getWorld();
-            String chosen = getRandomStructure(serverWorld);
+    public InteractionResult useOn(UseOnContext context) {
+        if (!context.getLevel().isClientSide()) {
+            ServerLevel serverLevel = (ServerLevel) context.getLevel();
+            String chosen = getRandomStructure(serverLevel);
 
             if (chosen != null) {
-                context.getPlayer().sendStatusMessage(
-                        new StringTextComponent("Random Chip selected: " + chosen), true);
+                context.getPlayer().sendSystemMessage(
+                        Component.literal("Random Chip selected: " + chosen)
+                );
             } else {
-                context.getPlayer().sendStatusMessage(
-                        new StringTextComponent("No structures ending in _reality found!"), true);
+                context.getPlayer().sendSystemMessage(
+                        Component.literal("No structures ending in _reality found!")
+                );
             }
         }
-        return ActionResultType.SUCCESS;
+        return InteractionResult.SUCCESS;
     }
 }

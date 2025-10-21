@@ -1,16 +1,16 @@
 package com.devmaster.reality_spawner.items;
 
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroup;
-import net.minecraft.item.ItemUseContext;
-import net.minecraft.util.ActionResultType;
-import net.minecraft.util.text.StringTextComponent;
+
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.context.UseOnContext;
 
 public class DataChip extends Item {
     private final String structureName;
 
     public DataChip(String structureName) {
-        super(new Item.Properties().group(ItemGroup.MISC));
+        super(new Item.Properties());
         this.structureName = structureName;
     }
 
@@ -19,11 +19,11 @@ public class DataChip extends Item {
     }
 
     @Override
-    public ActionResultType onItemUse(ItemUseContext context) {
-        if (!context.getWorld().isRemote) {
-            context.getPlayer().sendStatusMessage(
-                    new StringTextComponent("Inserted Data Chip: " + structureName), true);
+    public InteractionResult useOn(UseOnContext context) {
+        if (!context.getLevel().isClientSide) {
+            context.getPlayer().sendSystemMessage(
+                    Component.literal("Inserted Data Chip: " + structureName));
         }
-        return ActionResultType.SUCCESS;
+        return InteractionResult.SUCCESS;
     }
 }

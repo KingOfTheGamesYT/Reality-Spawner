@@ -1,8 +1,13 @@
 package com.devmaster.reality_spawner.misc;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.IWorldReader;
-import net.minecraft.world.gen.feature.template.*;
+import com.mojang.serialization.Codec;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureProcessor;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureProcessorType;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 import javax.annotation.Nullable;
 
@@ -16,17 +21,16 @@ public class ContainmentProcessor extends StructureProcessor {
         this.end = end;
     }
 
-    @Override
-    public Template.BlockInfo process(
-            IWorldReader world,
+    @Nullable
+    public StructureTemplate.StructureBlockInfo process(
+            LevelReader levelReader,
             BlockPos pos,
             BlockPos templateOrigin,
-            Template.BlockInfo original,
-            Template.BlockInfo current,
-            PlacementSettings settings,
-            @Nullable Template template) {
+            StructureTemplate.StructureBlockInfo original,
+            StructureTemplate.StructureBlockInfo current,
+            StructurePlaceSettings settings) {
 
-        BlockPos worldPos = current.pos;
+        BlockPos worldPos = current.pos();
 
         // Only place blocks within the interior bounds
         if (worldPos.getX() < start.getX() || worldPos.getX() > end.getX() ||
@@ -40,9 +44,11 @@ public class ContainmentProcessor extends StructureProcessor {
         return current;
     }
 
+    public static final Codec<ContainmentProcessor> CODEC = Codec.unit(() -> new ContainmentProcessor(BlockPos.ZERO, BlockPos.ZERO));
+
     @Override
-    protected IStructureProcessorType<?> getType() {
-        return IStructureProcessorType.BLOCK_IGNORE;
+    protected StructureProcessorType<?> getType() {
+        // Replace with your registered processor type (you must register this!)
+        return RegistryHandler.CONTAINMENT_PROCESSOR.get();
     }
 }
-

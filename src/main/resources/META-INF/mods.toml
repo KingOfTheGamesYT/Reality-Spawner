@@ -1,6 +1,6 @@
 modLoader="javafml"
 
-loaderVersion="[36,)"
+loaderVersion="[47,)"
 
 license="All rights reserved"
 
@@ -11,7 +11,7 @@ configBackground="reality_spawner:textures/block/reality_spawner.png"
 
 modId="reality_spawner"
 
-version="1.0.0"
+version="1.0.1"
 
 displayName="Reality Spawner"
 
@@ -29,7 +29,7 @@ description='''Allows you to bring other realities to this one'''
 [[dependencies.reality_spawner]]
     modId="forge"
     mandatory=true
-    versionRange="[36,)"
+    versionRange="[47,)"
     ordering="NONE"
     side="BOTH"
 
@@ -37,6 +37,6 @@ description='''Allows you to bring other realities to this one'''
 [[dependencies.reality_spawner]]
     modId="minecraft"
     mandatory=true
-    versionRange="[1.16.5,1.17]"
+    versionRange="[1.20.1,1.21]"
     ordering="NONE"
     side="BOTH"

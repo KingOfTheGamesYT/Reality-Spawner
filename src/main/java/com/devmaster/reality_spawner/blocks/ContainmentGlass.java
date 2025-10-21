@@ -1,13 +1,11 @@
 package com.devmaster.reality_spawner.blocks;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.SoundType;
-import net.minecraft.block.material.Material;
-import net.minecraft.item.ItemStack;
-import net.minecraft.loot.LootContext;
-
-import net.minecraftforge.common.ToolType;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.loot.LootParams;
 
 import java.util.Collections;
 import java.util.List;
@@ -15,21 +13,19 @@ import java.util.List;
 public class ContainmentGlass extends Block {
 
     public ContainmentGlass() {
-        super(Properties.create(Material.GLASS)
-                        .hardnessAndResistance(20, 10000)
-                        .setRequiresTool()
-                        .harvestLevel(2)
-                        .notSolid()
-                        .sound(SoundType.GLASS)
-                        .harvestTool(ToolType.PICKAXE));
-    }
+        super(BlockBehaviour.Properties.of()
+                        .strength(20, 10000)
+                        .requiresCorrectToolForDrops()
+                        .noOcclusion()
+                        .sound(SoundType.GLASS));}
 
     @Override
-    public List<ItemStack> getDrops(BlockState state, LootContext.Builder builder) {
+    public List<ItemStack> getDrops(BlockState state, LootParams.Builder builder) {
         List<ItemStack> dropsOriginal = super.getDrops(state, builder);
         if (!dropsOriginal.isEmpty())
             return dropsOriginal;
-        return Collections.singletonList(new ItemStack(this, 1));
+        return List.of(new ItemStack(this));
     }
+
 
 }

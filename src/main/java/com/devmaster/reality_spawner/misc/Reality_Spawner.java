@@ -1,9 +1,11 @@
 package com.devmaster.reality_spawner.misc;
 
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.RenderTypeLookup;
 
+import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
@@ -23,6 +25,7 @@ public class Reality_Spawner {
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::doClientStuff);
         final IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         modEventBus.addListener(this::setup);
+        modEventBus.addListener(this::addCreative);
         MinecraftForge.EVENT_BUS.register(this);
         RegistryHandler.init();
     }
@@ -31,7 +34,18 @@ public class Reality_Spawner {
 
     }
     private void doClientStuff(final FMLClientSetupEvent event) {
-        RenderTypeLookup.setRenderLayer(RegistryHandler.CONTAINMENT_GLASS.get(), RenderType.getCutout());
+        ItemBlockRenderTypes.setRenderLayer(RegistryHandler.CONTAINMENT_GLASS.get(), RenderType.cutout());
 
+    }
+
+    private void addCreative(BuildCreativeModeTabContentsEvent event) {
+        if(event.getTabKey() == CreativeModeTabs.BUILDING_BLOCKS) {
+            event.accept(RegistryHandler.CONTAINMENT_GLASS);
+            event.accept(RegistryHandler.CONTAINMENT_BLOCK);
+            event.accept(RegistryHandler.REALITY_SPAWNER);
+        }
+        if(event.getTabKey() == CreativeModeTabs.INGREDIENTS) {
+            event.accept(RegistryHandler.RANDOM_CHIP);
+        }
     }
 }
